@@ -26,6 +26,6 @@ func main() {
 		cmd := scanner.Text()
 		url := curl_cmd.ParseCmdStr(cmd)[1]
 		header := curl_cmd.GetHeadersFromCurlCmd(cmd)
-		fmt.Println(http_util.GetResourceStat(url, header))
+		fmt.Println(http_util.GetResourceInfo(url, header))
 	}
 }

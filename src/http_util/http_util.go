@@ -12,7 +12,7 @@ import (
 	"strconv"
 )
 
-type ResourceStat struct {
+type ResourceInfo struct {
 	length   int64
 	filename string
 }
@@ -86,16 +86,16 @@ func get_attchment_filename(header http.Header) (fn string, err error) {
 	fn = re.ReplaceAllString(fn, " ")
 	return
 }
-func GetResourceStat(url_ string, header http.Header) (resource_stat ResourceStat, err error) {
+func GetResourceInfo(url_ string, header http.Header) (resource_info ResourceInfo, err error) {
 	resp, err := get(url_, header)
 	if err != nil {
 		return
 	}
 	defer resp.Body.Close()
-	resource_stat.length, err = get_content_length(resp.Header)
+	resource_info.length, err = get_content_length(resp.Header)
 	if err != nil {
 		return
 	}
-	resource_stat.filename, _ = get_attchment_filename(resp.Header)
+	resource_info.filename, _ = get_attchment_filename(resp.Header)
 	return
 }
