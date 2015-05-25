@@ -9,6 +9,10 @@ import (
 	"os"
 )
 
+func init() {
+	log.SetFlags(log.Lshortfile | log.LstdFlags)
+}
+
 func main() {
 	if len(os.Args) != 2 {
 		log.Fatal("Usage: mcurl curl-cmd-file")
