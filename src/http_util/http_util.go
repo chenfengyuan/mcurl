@@ -3,11 +3,14 @@ package http_util
 import (
 	// "crypto/md5"
 	// "errors"
+	"encoding/json"
 	"fmt"
-	// "io/ioutil"
+	"io"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"regexp"
 	"strconv"
 )
@@ -98,4 +101,109 @@ func GetResourceInfo(url_ string, header http.Header) (resource_info ResourceInf
 	}
 	resource_info.filename, _ = get_attchment_filename(resp.Header)
 	return
+}
+
+type FileDownloadInfo struct {
+	Length    int64
+	MD5       string
+	BlockSize int64
+	Blocks    []bool
+	Name      string
+}
+
+var open_file_func openFileFunc = NewFile
+
+const (
+	BlockSize = 1024 * 1024
+)
+
+func (info *FileDownloadInfo) Sync() error {
+	data, err := json.Marshal(*info)
+	if err != nil {
+		return err
+	}
+	f, err := open_file_func(info.Name + ".info")
+	if err != nil {
+		return err
+	}
+	_, err = f.Seek(0, 0)
+	if err != nil {
+		return err
+	}
+	err = f.Truncate(0)
+	if err != nil {
+		return err
+	}
+	_, err = f.Write(data)
+	if err != nil {
+		return err
+	}
+	Truncate(info.Name, info.Length)
+	return nil
+}
+
+type File interface {
+	Size() int64
+	Name() string
+	io.ReadWriteSeeker
+	Truncate(size int64) error
+}
+
+type openFileFunc func(string) (File, error)
+
+type FileS struct {
+	os.File
+}
+
+func (f *FileS) Size() int64 {
+	stat, err := f.Stat()
+	if err != nil {
+		return 0
+	}
+	return stat.Size()
+}
+
+func NewFile(name string) (File, error) {
+	f, err := os.OpenFile(name, os.O_RDWR|os.O_CREATE, 0666)
+	fs := FileS{*f}
+	return &fs, err
+}
+
+func Truncate(name string, size int64) error {
+	f, err := os.Create(name)
+	if err != nil {
+		return err
+	}
+	f.Close()
+	err = os.Truncate(name, size)
+	return err
+}
+
+func NewFileDownloadInfo(name string, file_size int64) (*FileDownloadInfo, error) {
+	info_file, err := open_file_func(name + ".info")
+	if err != nil {
+		return nil, err
+	}
+	if info_file.Size() > 0 {
+		info := FileDownloadInfo{}
+		data, err := ioutil.ReadAll(info_file)
+		if err != nil {
+			return nil, err
+		}
+		err = json.Unmarshal(data, &info)
+		if err != nil {
+			return nil, err
+		}
+		return &info, nil
+	}
+	tmp := new(FileDownloadInfo)
+	tmp.Name = name
+	tmp.Length = file_size
+	tmp.BlockSize = BlockSize
+	n_blocks := tmp.Length / tmp.BlockSize
+	if tmp.Length%tmp.BlockSize != 0 {
+		n_blocks += 1
+	}
+	tmp.Blocks = make([]bool, n_blocks)
+	return tmp, nil
 }
