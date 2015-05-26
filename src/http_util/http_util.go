@@ -114,7 +114,8 @@ type FileDownloadInfo struct {
 var open_file_func openFileFunc = NewFile
 
 const (
-	BlockSize = 1024 * 1024
+	BlockSize   = 1024 * 1024
+	RequestSize = 1024 * 1024 * 100
 )
 
 func (info *FileDownloadInfo) Sync() error {
@@ -140,6 +141,31 @@ func (info *FileDownloadInfo) Sync() error {
 	}
 	Truncate(info.Name, info.Length)
 	return nil
+}
+
+type DownloadRange struct {
+	Start  int64
+	Length int64
+}
+
+func (info *FileDownloadInfo) UndownloadedRanges() []DownloadRange {
+	rv := make([]DownloadRange, 0)
+	i := 0
+	for ; i < len(info.Blocks); i += 1 {
+		if info.Blocks[i] == true {
+			continue
+		}
+		j := i
+		for ; j < len(info.Blocks) && info.Blocks[j] == false; j += 1 {
+		}
+		if j == len(info.Blocks) {
+			rv = append(rv, DownloadRange{int64(i) * int64(BlockSize), int64(info.Length) - int64(i*BlockSize)})
+		} else {
+			rv = append(rv, DownloadRange{int64(i) * int64(BlockSize), int64(j-i) * int64(BlockSize)})
+		}
+		i = j
+	}
+	return rv
 }
 
 type File interface {

@@ -52,7 +52,11 @@ func TestFileDownloadInfo(t *testing.T) {
 	if info.Name != test_file {
 		t.Fatalf("wrong filename, expect %v, get %v", test_file, info.Name)
 	}
+	ranges := info.UndownloadedRanges()
+	t.Log(ranges[0])
 	info.Blocks[1] = true
+	ranges = info.UndownloadedRanges()
+	t.Log(ranges[0])
 	info.Sync()
 	info, err = NewFileDownloadInfo(test_file, file_size)
 	if err != nil {
