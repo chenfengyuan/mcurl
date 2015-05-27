@@ -104,18 +104,17 @@ func GetResourceInfo(url_ string, header http.Header) (resource_info ResourceInf
 }
 
 type FileDownloadInfo struct {
-	Length    int64
-	MD5       string
-	BlockSize int64
-	Blocks    []bool
-	Name      string
+	Length int64
+	MD5    string
+	Blocks []bool
+	Name   string
 }
 
 var open_file_func openFileFunc = NewFile
 
 const (
-	BlockSize   = 1024 * 1024
-	RequestSize = 1024 * 1024 * 100
+	BlockSize         int64 = 1024 * 1024
+	NBlocksPerRequest       = 100
 )
 
 func (info *FileDownloadInfo) Sync() error {
@@ -143,6 +142,19 @@ func (info *FileDownloadInfo) Sync() error {
 	return nil
 }
 
+func (info *FileDownloadInfo) Update(start int64, length int64) {
+	end := start + length
+	for i := start / BlockSize; i < int64(len(info.Blocks)); i++ {
+		tmp := (i+1)*BlockSize - 1
+		if tmp >= start && tmp < end {
+			info.Blocks[i] = true
+		}
+	}
+	if info.Length <= end {
+		info.Blocks[len(info.Blocks)-1] = true
+	}
+}
+
 type DownloadRange struct {
 	Start  int64
 	Length int64
@@ -151,15 +163,19 @@ type DownloadRange struct {
 func (info *FileDownloadInfo) UndownloadedRanges() []DownloadRange {
 	rv := make([]DownloadRange, 0)
 	i := 0
-	for ; i < len(info.Blocks); i += 1 {
+	for i < len(info.Blocks) {
 		if info.Blocks[i] == true {
+			i++
 			continue
 		}
 		j := i
-		for ; j < len(info.Blocks) && info.Blocks[j] == false; j += 1 {
+		for ; j < len(info.Blocks) && info.Blocks[j] == false; j++ {
+			if j-i >= NBlocksPerRequest {
+				break
+			}
 		}
 		if j == len(info.Blocks) {
-			rv = append(rv, DownloadRange{int64(i) * int64(BlockSize), int64(info.Length) - int64(i*BlockSize)})
+			rv = append(rv, DownloadRange{int64(i) * int64(BlockSize), int64(info.Length) - int64(i)*BlockSize})
 		} else {
 			rv = append(rv, DownloadRange{int64(i) * int64(BlockSize), int64(j-i) * int64(BlockSize)})
 		}
@@ -225,11 +241,15 @@ func NewFileDownloadInfo(name string, file_size int64) (*FileDownloadInfo, error
 	tmp := new(FileDownloadInfo)
 	tmp.Name = name
 	tmp.Length = file_size
-	tmp.BlockSize = BlockSize
-	n_blocks := tmp.Length / tmp.BlockSize
-	if tmp.Length%tmp.BlockSize != 0 {
+	n_blocks := tmp.Length / BlockSize
+	if tmp.Length%BlockSize != 0 {
 		n_blocks += 1
 	}
 	tmp.Blocks = make([]bool, n_blocks)
+	file, err := open_file_func(name)
+	if err != nil {
+		return nil, err
+	}
+	tmp.Update(0, file.Size())
 	return tmp, nil
 }
