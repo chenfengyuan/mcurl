@@ -15,6 +15,8 @@ import (
 	"strconv"
 )
 
+const ChromeUserAgent string = "Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.17 (KHTML, like Gecko) Chrome/24.0.1312.56 Safari/537.17"
+
 type ResourceInfo struct {
 	length   int64
 	filename string
@@ -36,6 +38,9 @@ type myUrlEror url.Error
 func (e myUrlEror) Error() string {
 	return (&e).Error()
 }
+
+var Get func(string, http.Header) (*http.Response, error) = get
+
 func get(url_ string, header http.Header) (resp *http.Response, err error) {
 	client := http.Client{CheckRedirect: CheckRedirect}
 	req, err := http.NewRequest("GET", url_, nil)
@@ -253,3 +258,22 @@ func NewFileDownloadInfo(name string, file_size int64) (*FileDownloadInfo, error
 	tmp.Update(0, file.Size())
 	return tmp, nil
 }
+
+type Request struct {
+	url    string
+	header http.Header
+}
+
+type DownloadTaskInfo struct {
+	DownloadRange
+	Requests []Request
+	name     string
+}
+
+type DownloadChunk struct {
+	data  []byte
+	start int64
+	name  string
+}
+
+func Downloader(in <-chan DownloadTaskInfo)

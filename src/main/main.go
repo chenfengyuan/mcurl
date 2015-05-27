@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"http_util"
 	"log"
+	"net/http"
 	"os"
 )
 
@@ -13,7 +14,18 @@ func init() {
 	log.SetFlags(log.Lshortfile | log.LstdFlags)
 }
 
+func test() {
+	log.Printf("%#v", http_util.Get)
+	resp, err := http_util.Get("http://dldir1.qq.com/qqfile/qq/QQ7.2/14810/QQ7.2.exe", http.Header{"User-Agent": []string{http_util.ChromeUserAgent}})
+	if err != nil {
+		log.Fatalf("%v", err)
+	}
+	log.Printf("%#v", resp.Header)
+}
+
 func main() {
+	test()
+	return
 	if len(os.Args) != 2 {
 		log.Fatal("Usage: mcurl curl-cmd-file")
 	}
