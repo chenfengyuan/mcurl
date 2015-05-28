@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
+	// "log"
 	"net/http"
 	"net/url"
 	"os"
@@ -48,7 +48,7 @@ func get(url_ string, header http.Header) (resp *http.Response, err error) {
 		return
 	}
 	for i := 0; i < 10; i += 1 {
-		log.Printf("url: %v\n\n", req.URL)
+		// log.Printf("url: %v\n\n", req.URL)
 		req.Header = header
 		resp, err = client.Do(req)
 		if err != nil {
@@ -266,14 +266,69 @@ type Request struct {
 
 type DownloadTaskInfo struct {
 	DownloadRange
-	Requests []Request
-	name     string
+	Requests     []Request
+	Name         string
+	RequestBaseN int
 }
 
 type DownloadChunk struct {
-	data  []byte
-	start int64
-	name  string
+	Data  []byte
+	Start int64
+	Name  string
 }
 
-func Downloader(in <-chan DownloadTaskInfo)
+func RangeGet(req Request, start, length int64, out chan<- []byte) {
+	header := http.Header{}
+	for k, vs := range req.header {
+		for _, v := range vs {
+			header.Add(k, v)
+		}
+	}
+	header.Add("Range", fmt.Sprintf("bytes=%d-", start))
+	resp, err := get(req.url, header)
+	if err != nil {
+		out <- nil
+		return
+	}
+	if resp.StatusCode != 206 {
+		out <- nil
+		return
+	}
+	buf := make([]byte, BlockSize)
+	var downloaded int64 = 0
+	base := 0
+	for {
+		n, err := resp.Body.Read(buf[base:])
+		downloaded += int64(n)
+		base += n
+		if err != nil {
+			out <- buf[:base]
+			out <- nil
+			return
+		} else {
+			if downloaded >= length {
+				out <- buf[:base-int(downloaded-length)]
+				out <- nil
+				return
+			}
+			if int64(base) >= BlockSize {
+				out <- buf[:base]
+				buf = make([]byte, BlockSize)
+				base = 0
+			}
+		}
+	}
+}
+
+func Downloader(in <-chan DownloadTaskInfo, out chan<- DownloadChunk) {
+	task_info := <-in
+	length := task_info.Length
+	start := task_info.Start
+	name := task_info.Name
+	chunk_datas := make(chan []byte, 1)
+	go RangeGet(task_info.Requests[0], start, length, chunk_datas)
+	for chunk_data := range chunk_datas {
+		out <- DownloadChunk{Data: chunk_data, Name: name, Start: start}
+		start += int64(len(chunk_data))
+	}
+}
