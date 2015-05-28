@@ -325,10 +325,26 @@ func Downloader(in <-chan DownloadTaskInfo, out chan<- DownloadChunk) {
 	length := task_info.Length
 	start := task_info.Start
 	name := task_info.Name
-	chunk_datas := make(chan []byte, 1)
-	go RangeGet(task_info.Requests[0], start, length, chunk_datas)
-	for chunk_data := range chunk_datas {
-		out <- DownloadChunk{Data: chunk_data, Name: name, Start: start}
-		start += int64(len(chunk_data))
+	offset := task_info.RequestBaseN
+	var downloaded int64 = 0
+SourceSwitchLoop:
+	for {
+		chunk_datas := make(chan []byte, 1)
+		go RangeGet(task_info.Requests[offset%len(task_info.Requests)], start, length, chunk_datas)
+		for chunk_data := range chunk_datas {
+			if chunk_data == nil {
+				if downloaded == length {
+					out <- DownloadChunk{Data: nil, Name: name, Start: start}
+					return
+				} else {
+					offset += 1
+					continue SourceSwitchLoop
+				}
+			} else {
+				downloaded += int64(len(chunk_data))
+				out <- DownloadChunk{Data: chunk_data, Name: name, Start: start}
+				start += int64(len(chunk_data))
+			}
+		}
 	}
 }

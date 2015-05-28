@@ -115,18 +115,20 @@ func testDownloaderHelper(t *testing.T, info DownloadTaskInfo, md5sum string) {
 func TestDownloader(t *testing.T) {
 	header := http.Header{"User-Agent": []string{ChromeUserAgent}}
 	req := Request{`http://dldir1.qq.com/qqfile/qq/QQ7.2/14810/QQ7.2.exe`, header}
-	info := DownloadTaskInfo{DownloadRange{0, BlockSize + 1}, []Request{req}, "QQ7.2.exe", 0}
+	bad_req := Request{`http://127.0.0.1:10`, header}
+	reqs := []Request{bad_req, req}
+	info := DownloadTaskInfo{DownloadRange{0, BlockSize + 1}, reqs, "QQ7.2.exe", 0}
 	testDownloaderHelper(t, info, "f3a593ffaecc91ee14f65a43692c12a5")
 
-	info = DownloadTaskInfo{DownloadRange{1, BlockSize - 1}, []Request{req}, "QQ7.2.exe", 0}
+	info = DownloadTaskInfo{DownloadRange{1, BlockSize - 1}, reqs, "QQ7.2.exe", 0}
 	testDownloaderHelper(t, info, "3bf86e395d79b8e5e06aa56adf6eb79d")
 
-	info = DownloadTaskInfo{DownloadRange{1, BlockSize * 2}, []Request{req}, "QQ7.2.exe", 0}
+	info = DownloadTaskInfo{DownloadRange{1, BlockSize * 2}, reqs, "QQ7.2.exe", 0}
 	testDownloaderHelper(t, info, "09273f055723fabae599736214886a06")
 
-	info = DownloadTaskInfo{DownloadRange{1, BlockSize*3 - 1}, []Request{req}, "QQ7.2.exe", 0}
+	info = DownloadTaskInfo{DownloadRange{1, BlockSize*3 - 1}, reqs, "QQ7.2.exe", 0}
 	testDownloaderHelper(t, info, "7ebfa5deddab0c7b7f01f558695517f2")
 
-	info = DownloadTaskInfo{DownloadRange{57179300, 20}, []Request{req}, "QQ7.2.exe", 0}
+	info = DownloadTaskInfo{DownloadRange{57179300, 20}, reqs, "QQ7.2.exe", 0}
 	testDownloaderHelper(t, info, "4fb35a571508c9b8237bdbb71b4fb797")
 }
