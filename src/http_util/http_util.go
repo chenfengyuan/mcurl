@@ -3,16 +3,18 @@ package http_util
 import (
 	// "crypto/md5"
 	// "errors"
+	"curl_cmd"
 	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
-	// "log"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
 	"regexp"
 	"strconv"
+	"sync"
 )
 
 const ChromeUserAgent string = "Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.17 (KHTML, like Gecko) Chrome/24.0.1312.56 Safari/537.17"
@@ -80,13 +82,13 @@ func get_content_length(header http.Header) (rv int64, err error) {
 func get_attchment_filename(header http.Header) (fn string, err error) {
 	content_disposition := header["Content-Disposition"]
 	if len(content_disposition) != 1 {
-		fmt.Printf("wrong Content-Disposition :%v", content_disposition)
+		log.Printf("wrong Content-Disposition :%v", content_disposition)
 		return
 	}
 	re := regexp.MustCompile(`filename="(.+)"`)
 	tmp := re.FindAllStringSubmatch(content_disposition[0], 1)
 	if len(tmp) != 1 && len(tmp[0]) != 2 {
-		fmt.Printf("wrong Content-Disposition :%v", content_disposition)
+		log.Printf("wrong Content-Disposition :%v", content_disposition)
 		return
 	}
 	fn = tmp[0][1]
@@ -127,7 +129,7 @@ func (info *FileDownloadInfo) Sync() error {
 	if err != nil {
 		return err
 	}
-	f, err := open_file_func(info.Name + ".info")
+	f, err := open_file_func(info.Name + ".info.new")
 	if err != nil {
 		return err
 	}
@@ -143,7 +145,8 @@ func (info *FileDownloadInfo) Sync() error {
 	if err != nil {
 		return err
 	}
-	Truncate(info.Name, info.Length)
+	os.Rename(info.Name+".info.new", info.Name+".info")
+	// Truncate(info.Name, info.Length)
 	return nil
 }
 
@@ -194,6 +197,8 @@ type File interface {
 	Name() string
 	io.ReadWriteSeeker
 	Truncate(size int64) error
+	WriteAt([]byte, int64) (int, error)
+	Sync() error
 }
 
 type openFileFunc func(string) (File, error)
@@ -287,13 +292,20 @@ func RangeGet(req Request, start, length int64, out chan<- []byte) {
 	header.Add("Range", fmt.Sprintf("bytes=%d-", start))
 	resp, err := get(req.url, header)
 	if err != nil {
-		out <- nil
+		close(out)
 		return
 	}
-	if resp.StatusCode != 206 {
-		out <- nil
+	defer func() {
+		resp.Body.Close()
+	}()
+	if resp.Header.Get("Content-Range") == "" {
+		close(out)
 		return
 	}
+	// if resp.StatusCode != 206 {
+	// 	close(out)
+	// 	return
+	// }
 	buf := make([]byte, BlockSize)
 	var downloaded int64 = 0
 	base := 0
@@ -303,12 +315,12 @@ func RangeGet(req Request, start, length int64, out chan<- []byte) {
 		base += n
 		if err != nil {
 			out <- buf[:base]
-			out <- nil
+			close(out)
 			return
 		} else {
 			if downloaded >= length {
 				out <- buf[:base-int(downloaded-length)]
-				out <- nil
+				close(out)
 				return
 			}
 			if int64(base) >= BlockSize {
@@ -320,31 +332,120 @@ func RangeGet(req Request, start, length int64, out chan<- []byte) {
 	}
 }
 
-func Downloader(in <-chan DownloadTaskInfo, out chan<- DownloadChunk) {
-	task_info := <-in
-	length := task_info.Length
-	start := task_info.Start
-	name := task_info.Name
-	offset := task_info.RequestBaseN
-	var downloaded int64 = 0
-SourceSwitchLoop:
-	for {
-		chunk_datas := make(chan []byte, 1)
-		go RangeGet(task_info.Requests[offset%len(task_info.Requests)], start, length, chunk_datas)
-		for chunk_data := range chunk_datas {
-			if chunk_data == nil {
-				if downloaded == length {
-					out <- DownloadChunk{Data: nil, Name: name, Start: start}
-					return
-				} else {
-					offset += 1
-					continue SourceSwitchLoop
-				}
-			} else {
+func Downloader(in <-chan DownloadTaskInfo, out chan<- DownloadChunk, wg *sync.WaitGroup) {
+	for task_info := range in {
+		length := task_info.Length
+		start := task_info.Start
+		name := task_info.Name
+		offset := task_info.RequestBaseN
+		var downloaded int64 = 0
+		for {
+			chunk_datas := make(chan []byte, 1)
+			go RangeGet(task_info.Requests[offset%len(task_info.Requests)], start, length, chunk_datas)
+			for chunk_data := range chunk_datas {
 				downloaded += int64(len(chunk_data))
 				out <- DownloadChunk{Data: chunk_data, Name: name, Start: start}
 				start += int64(len(chunk_data))
 			}
+			if downloaded == length {
+				break
+			} else {
+				offset += 1
+			}
 		}
 	}
+	wg.Done()
+}
+
+func DownloadChunkWaitGroupAutoCloser(wg *sync.WaitGroup, c chan<- DownloadChunk) {
+	wg.Wait()
+	close(c)
+}
+
+// func Dispatcher(curl_cmds []string, n_workers int) {
+// }
+
+func Receiver(fileDownloadInfoC <-chan FileDownloadInfo, chunks <-chan DownloadChunk, wg *sync.WaitGroup) {
+	defer func() {
+		wg.Done()
+	}()
+	fileDownloadInfoMap := make(map[string]FileDownloadInfo)
+	fileFdMap := make(map[string]File)
+	for {
+		select {
+		case info, ok := <-fileDownloadInfoC:
+			if !ok {
+				fileDownloadInfoC = nil
+				continue
+			}
+			fileDownloadInfoMap[info.Name] = info
+			fd, err := open_file_func(info.Name)
+			if err != nil {
+				log.Fatalf("can't open %v", info.Name)
+			}
+			fileFdMap[info.Name] = fd
+		case chunk, ok := <-chunks:
+			if !ok {
+				return
+			}
+			info, ok := fileDownloadInfoMap[chunk.Name]
+			info.Update(chunk.Start, int64(len(chunk.Data)))
+			info.Sync()
+			if !ok {
+				log.Fatalf("can't find chunk.Name in info_map, %v", chunk.Name)
+			}
+			fd, ok := fileFdMap[chunk.Name]
+			if !ok {
+				log.Fatalf("can't find chunk.Name in file_fd_map, %v", chunk.Name)
+			}
+			_, err := fd.WriteAt(chunk.Data, chunk.Start)
+			if err != nil {
+				log.Fatalf("can't write content to file : %v", chunk.Name)
+			}
+			err = fd.Sync()
+			if err != nil {
+				log.Fatalf("can't write content to file : %v", chunk.Name)
+			}
+		}
+	}
+	log.Print("done")
+}
+func Run(curl_cmd_strs []string) {
+	file_download_info_c := make(chan FileDownloadInfo, 1)
+	task_info_c := make(chan DownloadTaskInfo, 1)
+	chunk_c := make(chan DownloadChunk, 1)
+	receiver_wait_group := sync.WaitGroup{}
+	worker_wait_group := sync.WaitGroup{}
+	receiver_wait_group.Add(1)
+	go Receiver(file_download_info_c, chunk_c, &receiver_wait_group)
+	worker_wait_group.Add(1)
+	go Downloader(task_info_c, chunk_c, &worker_wait_group)
+	worker_wait_group.Add(1)
+	go Downloader(task_info_c, chunk_c, &worker_wait_group)
+	go DownloadChunkWaitGroupAutoCloser(&worker_wait_group, chunk_c)
+
+	for _, curl_cmd_str := range curl_cmd_strs {
+		url := curl_cmd.ParseCmdStr(curl_cmd_str)[1]
+		header := curl_cmd.GetHeadersFromCurlCmd(curl_cmd_str)
+		req := Request{url, header}
+		reqs := []Request{req}
+		resource_info, err := GetResourceInfo(url, header)
+		if err != nil {
+			log.Fatal(err)
+		}
+		file_downloaded_info, err := NewFileDownloadInfo(resource_info.filename, resource_info.length)
+		if err != nil {
+			log.Fatal(err)
+		}
+		file_downloaded_info.Sync()
+		file_download_info_c <- *file_downloaded_info
+		for _, range_ := range file_downloaded_info.UndownloadedRanges() {
+			task := DownloadTaskInfo{range_, reqs, resource_info.filename, 0}
+			task_info_c <- task
+		}
+	}
+	close(task_info_c)
+	close(file_download_info_c)
+	receiver_wait_group.Wait()
+	worker_wait_group.Wait()
 }
