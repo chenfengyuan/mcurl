@@ -12,8 +12,13 @@ func init() {
 }
 
 func test() {
-	f, _ := os.OpenFile("temp", os.O_RDWR|os.O_CREATE, 0666)
-	f.WriteAt([]byte{'a', 'b', 'c'}, 1000)
+	a := []int{1, 2, 3}
+	log.Print(a[0])
+	a = a[1:]
+	log.Print(a[0])
+	a = a[1:]
+	log.Print(a[0])
+	a = a[1:]
 }
 
 func main() {
@@ -28,10 +33,13 @@ func main() {
 	scanner := bufio.NewScanner(fn)
 	for scanner.Scan() {
 		cmd := scanner.Text()
+		if cmd == "" {
+			continue
+		}
 		// url := curl_cmd.ParseCmdStr(cmd)[1]
 		// header := curl_cmd.GetHeadersFromCurlCmd(cmd)
 		// fmt.Println(http_util.GetResourceInfo(url, header))
 		cmds = append(cmds, cmd)
 	}
-	http_util.Run(cmds)
+	http_util.Run(cmds, 3)
 }

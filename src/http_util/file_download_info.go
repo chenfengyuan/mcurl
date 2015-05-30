@@ -75,6 +75,14 @@ func (info *FileDownloadInfo) UndownloadedRanges() []DownloadRange {
 	}
 	return rv
 }
+func (info *FileDownloadInfo) Finished() bool {
+	for _, x := range info.Blocks {
+		if x == false {
+			return false
+		}
+	}
+	return true
+}
 
 func NewFileDownloadInfo(name string, file_size int64) (*FileDownloadInfo, error) {
 	info_file, err := open_file_func(name + ".info")
