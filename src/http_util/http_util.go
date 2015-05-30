@@ -3,7 +3,7 @@ package http_util
 import (
 	// "crypto/md5"
 	// "errors"
-	"curl_cmd"
+	// "curl_cmd"
 	"fmt"
 	"io"
 	"log"
@@ -95,9 +95,10 @@ type Request struct {
 
 type DownloadTaskInfo struct {
 	DownloadRange
-	Requests     []Request
-	Name         string
-	RequestBaseN int
+	Request
+	Name        string
+	FailedTimes int
+	LastWorkerN int
 }
 
 type DownloadChunk struct {
@@ -156,26 +157,30 @@ func RangeGet(req Request, start, length int64, out chan<- []byte) {
 	}
 }
 
-func Downloader(in <-chan DownloadTaskInfo, out chan<- DownloadChunk, wg *sync.WaitGroup) {
-	for task_info := range in {
+func Downloader(task_info_c <-chan DownloadTaskInfo, finished_c chan<- DownloadChunk, failed_task_info_c chan<- DownloadTaskInfo, wg *sync.WaitGroup, worker_n int) {
+	for task_info := range task_info_c {
 		length := task_info.Length
 		start := task_info.Start
 		name := task_info.Name
-		offset := task_info.RequestBaseN
 		var downloaded int64 = 0
-		for {
+		for try_times := 0; try_times < 3; try_times++ {
 			chunk_datas := make(chan []byte, 1)
-			go RangeGet(task_info.Requests[offset%len(task_info.Requests)], start, length, chunk_datas)
+			go RangeGet(task_info.Request, start, length, chunk_datas)
 			for chunk_data := range chunk_datas {
 				downloaded += int64(len(chunk_data))
-				out <- DownloadChunk{Data: chunk_data, Name: name, Start: start}
+				finished_c <- DownloadChunk{Data: chunk_data, Name: name, Start: start}
 				start += int64(len(chunk_data))
 			}
 			if downloaded == length {
 				break
-			} else {
-				offset += 1
 			}
+		}
+		if downloaded < length {
+			task_info.Start = start
+			task_info.Length = length - downloaded
+			task_info.LastWorkerN = worker_n
+			task_info.FailedTimes++
+			failed_task_info_c <- task_info
 		}
 	}
 	wg.Done()
@@ -185,9 +190,6 @@ func DownloadChunkWaitGroupAutoCloser(wg *sync.WaitGroup, c chan<- DownloadChunk
 	wg.Wait()
 	close(c)
 }
-
-// func Dispatcher(curl_cmds []string, n_workers int) {
-// }
 
 func Receiver(fileDownloadInfoC <-chan FileDownloadInfo, chunks <-chan DownloadChunk, wg *sync.WaitGroup) {
 	defer func() {
@@ -234,42 +236,43 @@ func Receiver(fileDownloadInfoC <-chan FileDownloadInfo, chunks <-chan DownloadC
 	}
 	log.Print("done")
 }
-func Run(curl_cmd_strs []string) {
-	file_download_info_c := make(chan FileDownloadInfo, 1)
-	task_info_c := make(chan DownloadTaskInfo, 1)
-	chunk_c := make(chan DownloadChunk, 1)
-	receiver_wait_group := sync.WaitGroup{}
-	worker_wait_group := sync.WaitGroup{}
-	receiver_wait_group.Add(1)
-	go Receiver(file_download_info_c, chunk_c, &receiver_wait_group)
-	worker_wait_group.Add(1)
-	go Downloader(task_info_c, chunk_c, &worker_wait_group)
-	worker_wait_group.Add(1)
-	go Downloader(task_info_c, chunk_c, &worker_wait_group)
-	go DownloadChunkWaitGroupAutoCloser(&worker_wait_group, chunk_c)
 
-	for _, curl_cmd_str := range curl_cmd_strs {
-		url := curl_cmd.ParseCmdStr(curl_cmd_str)[1]
-		header := curl_cmd.GetHeadersFromCurlCmd(curl_cmd_str)
-		req := Request{url, header}
-		reqs := []Request{req}
-		resource_info, err := GetResourceInfo(url, header)
-		if err != nil {
-			log.Fatal(err)
-		}
-		file_downloaded_info, err := NewFileDownloadInfo(resource_info.filename, resource_info.length)
-		if err != nil {
-			log.Fatal(err)
-		}
-		file_downloaded_info.Sync()
-		file_download_info_c <- *file_downloaded_info
-		for _, range_ := range file_downloaded_info.UndownloadedRanges() {
-			task := DownloadTaskInfo{range_, reqs, resource_info.filename, 0}
-			task_info_c <- task
-		}
-	}
-	close(task_info_c)
-	close(file_download_info_c)
-	receiver_wait_group.Wait()
-	worker_wait_group.Wait()
-}
+// func Run(curl_cmd_strs []string) {
+// 	file_download_info_c := make(chan FileDownloadInfo, 1)
+// 	task_info_c := make(chan DownloadTaskInfo, 1)
+// 	chunk_c := make(chan DownloadChunk, 1)
+// 	receiver_wait_group := sync.WaitGroup{}
+// 	worker_wait_group := sync.WaitGroup{}
+// 	receiver_wait_group.Add(1)
+// 	go Receiver(file_download_info_c, chunk_c, &receiver_wait_group)
+// 	worker_wait_group.Add(1)
+// 	go Downloader(task_info_c, chunk_c, &worker_wait_group)
+// 	worker_wait_group.Add(1)
+// 	go Downloader(task_info_c, chunk_c, &worker_wait_group)
+// 	go DownloadChunkWaitGroupAutoCloser(&worker_wait_group, chunk_c)
+
+// 	for _, curl_cmd_str := range curl_cmd_strs {
+// 		url := curl_cmd.ParseCmdStr(curl_cmd_str)[1]
+// 		header := curl_cmd.GetHeadersFromCurlCmd(curl_cmd_str)
+// 		req := Request{url, header}
+// 		reqs := []Request{req}
+// 		resource_info, err := GetResourceInfo(url, header)
+// 		if err != nil {
+// 			log.Fatal(err)
+// 		}
+// 		file_downloaded_info, err := NewFileDownloadInfo(resource_info.filename, resource_info.length)
+// 		if err != nil {
+// 			log.Fatal(err)
+// 		}
+// 		file_downloaded_info.Sync()
+// 		file_download_info_c <- *file_downloaded_info
+// 		for _, range_ := range file_downloaded_info.UndownloadedRanges() {
+// 			task := DownloadTaskInfo{range_, reqs, resource_info.filename, 0}
+// 			task_info_c <- task
+// 		}
+// 	}
+// 	close(task_info_c)
+// 	close(file_download_info_c)
+// 	receiver_wait_group.Wait()
+// 	worker_wait_group.Wait()
+// }

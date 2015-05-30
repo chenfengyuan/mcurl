@@ -96,13 +96,14 @@ func TestFileDownloadInfo(t *testing.T) {
 func testDownloaderHelper(t *testing.T, info DownloadTaskInfo, md5sum string) {
 	task_infos := make(chan DownloadTaskInfo, 1)
 	task_infos <- info
+	failed_task_info_c := make(chan DownloadTaskInfo, 1)
 	close(task_infos)
 	chunks := make(chan DownloadChunk, 1)
 	h := md5.New()
 	wg := sync.WaitGroup{}
 	wg.Add(1)
 	go DownloadChunkWaitGroupAutoCloser(&wg, chunks)
-	go Downloader(task_infos, chunks, &wg)
+	go Downloader(task_infos, chunks, failed_task_info_c, &wg, 42)
 	for chunk := range chunks {
 		h.Write(chunk.Data)
 	}
@@ -114,29 +115,53 @@ func testDownloaderHelper(t *testing.T, info DownloadTaskInfo, md5sum string) {
 func TestDownloader(t *testing.T) {
 	header := http.Header{"User-Agent": []string{ChromeUserAgent}}
 	req := Request{`http://dldir1.qq.com/qqfile/qq/QQ7.2/14810/QQ7.2.exe`, header}
-	bad_req := Request{`http://127.0.0.1:10`, header}
-	reqs := []Request{bad_req, req}
-	info := DownloadTaskInfo{DownloadRange{0, BlockSize + 1}, reqs, "QQ7.2.exe", 0}
+	info := DownloadTaskInfo{DownloadRange{0, BlockSize + 1}, req, "QQ7.2.exe", 0, 0}
 	testDownloaderHelper(t, info, "f3a593ffaecc91ee14f65a43692c12a5")
 
-	info = DownloadTaskInfo{DownloadRange{1, BlockSize - 1}, reqs, "QQ7.2.exe", 0}
+	info = DownloadTaskInfo{DownloadRange{1, BlockSize - 1}, req, "QQ7.2.exe", 0, 0}
 	testDownloaderHelper(t, info, "3bf86e395d79b8e5e06aa56adf6eb79d")
 
-	info = DownloadTaskInfo{DownloadRange{1, BlockSize * 2}, reqs, "QQ7.2.exe", 0}
+	info = DownloadTaskInfo{DownloadRange{1, BlockSize * 2}, req, "QQ7.2.exe", 0, 0}
 	testDownloaderHelper(t, info, "09273f055723fabae599736214886a06")
 
-	info = DownloadTaskInfo{DownloadRange{1, BlockSize*3 - 1}, reqs, "QQ7.2.exe", 0}
+	info = DownloadTaskInfo{DownloadRange{1, BlockSize*3 - 1}, req, "QQ7.2.exe", 0, 0}
 	testDownloaderHelper(t, info, "7ebfa5deddab0c7b7f01f558695517f2")
 
-	info = DownloadTaskInfo{DownloadRange{57179300, 20}, reqs, "QQ7.2.exe", 0}
+	info = DownloadTaskInfo{DownloadRange{57179300, 20}, req, "QQ7.2.exe", 0, 0}
 	testDownloaderHelper(t, info, "4fb35a571508c9b8237bdbb71b4fb797")
+}
+
+func testDownloaderRetryHelper(t *testing.T, info DownloadTaskInfo) DownloadTaskInfo {
+	task_infos := make(chan DownloadTaskInfo, 1)
+	task_infos <- info
+	failed_task_info_c := make(chan DownloadTaskInfo, 1)
+	close(task_infos)
+	chunks := make(chan DownloadChunk, 1)
+	h := md5.New()
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+	go DownloadChunkWaitGroupAutoCloser(&wg, chunks)
+	go Downloader(task_infos, chunks, failed_task_info_c, &wg, 42)
+	for chunk := range chunks {
+		h.Write(chunk.Data)
+	}
+	task_info := <-failed_task_info_c
+	return task_info
+}
+
+func TestDownloaderRetry(t *testing.T) {
+	header := http.Header{"User-Agent": []string{ChromeUserAgent}}
+	req := Request{`http://dldir1.qq.com/qqfile/qq/QQ7.2/14810/QQ7.2.exe`, header}
+	info := DownloadTaskInfo{DownloadRange{57179300, 30}, req, "QQ7.2.exe", 0, 0}
+	task_info := testDownloaderRetryHelper(t, info)
+	if task_info.FailedTimes != 1 || task_info.LastWorkerN != 42 || task_info.Start != 57179320 || task_info.Length != 10 {
+		t.Fatalf("wrong failed task info value: %v", task_info)
+	}
 }
 
 func TestReceiver(t *testing.T) {
 	header := http.Header{"User-Agent": []string{ChromeUserAgent}}
 	req := Request{`http://dldir1.qq.com/qqfile/qq/QQ7.2/14810/QQ7.2.exe`, header}
-	bad_req := Request{`http://127.0.0.1:10`, header}
-	reqs := []Request{bad_req, req}
 	var length int64 = 57179320
 	file_name := "QQ7.2.exe"
 	file_download_info, err := NewFileDownloadInfo(file_name, length)
@@ -146,17 +171,18 @@ func TestReceiver(t *testing.T) {
 	file_download_info.Sync()
 	file_download_info_c := make(chan FileDownloadInfo, 1)
 	file_download_info_c <- *file_download_info
+	failed_task_info_c := make(chan DownloadTaskInfo, 1)
 	close(file_download_info_c)
 	chunk_c := make(chan DownloadChunk, 1)
 	wg := sync.WaitGroup{}
 	wg.Add(1)
 	go Receiver(file_download_info_c, chunk_c, &wg)
-	task_info := DownloadTaskInfo{DownloadRange{57179300, 20}, reqs, "QQ7.2.exe", 0}
+	task_info := DownloadTaskInfo{DownloadRange{57179300, 20}, req, "QQ7.2.exe", 0, 0}
 	task_info_c := make(chan DownloadTaskInfo, 1)
 	wg2 := sync.WaitGroup{}
 	wg2.Add(1)
 	go DownloadChunkWaitGroupAutoCloser(&wg2, chunk_c)
-	go Downloader(task_info_c, chunk_c, &wg2)
+	go Downloader(task_info_c, chunk_c, failed_task_info_c, &wg2, 0)
 	task_info_c <- task_info
 	close(task_info_c)
 	wg.Wait()
