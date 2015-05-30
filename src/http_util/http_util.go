@@ -160,7 +160,7 @@ func RangeGet(req Request, start, length int64, out chan<- []byte) {
 
 func Downloader(task_info_c <-chan DownloadTaskInfo, finished_c chan<- DownloadChunk, failed_task_info_c chan<- DownloadTaskInfo, wg *sync.WaitGroup, worker_n int) {
 	for task_info := range task_info_c {
-		log.Printf("Worker %v, %v", worker_n, task_info)
+		log.Printf("Worker %v, %v", worker_n, task_info.DownloadRange)
 		length := task_info.Length
 		start := task_info.Start
 		name := task_info.Name
@@ -281,6 +281,7 @@ func Run(curl_cmd_strs []string, num_of_workers int) {
 		worker_n++
 		worker_n = worker_n % num_of_workers
 		url := curl_cmd.ParseCmdStr(curl_cmd_str)[1]
+		log.Printf("%v %v", url, worker_n)
 		url_chan_map[url] = worker_n
 		header := curl_cmd.GetHeadersFromCurlCmd(curl_cmd_str)
 		req := Request{url, header}
@@ -325,7 +326,7 @@ func Run(curl_cmd_strs []string, num_of_workers int) {
 		log.Printf("%v %v", file_name, len(*reqs))
 	}
 	for _, task_info := range task_infos {
-		log.Printf("%v %v", task_info.Name, task_info.DownloadRange)
+		log.Printf("%v %v %v", task_info.Name, task_info.DownloadRange, url_chan_map[task_info.url])
 		select {
 		case downloader_task_info_cs[url_chan_map[task_info.url]] <- task_info:
 		case failed_task_info := <-failed_task_info_c:

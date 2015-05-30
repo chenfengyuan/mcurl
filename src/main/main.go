@@ -41,5 +41,5 @@ func main() {
 		// fmt.Println(http_util.GetResourceInfo(url, header))
 		cmds = append(cmds, cmd)
 	}
-	http_util.Run(cmds, 3)
+	http_util.Run(cmds, 10)
 }
