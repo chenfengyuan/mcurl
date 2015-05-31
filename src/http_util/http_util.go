@@ -114,10 +114,10 @@ type DownloadChunk struct {
 
 func Downloader(task_info_c <-chan DownloadTaskInfo, finished_c chan<- DownloadChunk, failed_task_info_c chan<- DownloadTaskInfo, wg *sync.WaitGroup, worker_n int) {
 	for task_info := range task_info_c {
-		log.Printf("Worker %v, %v", worker_n, task_info.DownloadRange)
 		length := task_info.Length
 		start := task_info.Start
 		name := task_info.Name
+		log.Printf("Worker[%v] %v, %v", worker_n, name, task_info.DownloadRange)
 		var downloaded int64 = 0
 		task_start_time := GetNowEpochInMilli()
 		for try_times := 0; try_times < 3; try_times++ {
@@ -125,7 +125,7 @@ func Downloader(task_info_c <-chan DownloadTaskInfo, finished_c chan<- DownloadC
 			go RangeGet(task_info.Request, start, length, chunk_datas)
 			for chunk_data := range chunk_datas {
 				downloaded += int64(len(chunk_data))
-				log.Printf("Wroker [%v] %v, %v k/s, %v%%", name, worker_n, downloaded*1000/1024/(GetNowEpochInMilli()-task_start_time), 100*downloaded/length)
+				log.Printf("Wroker[%v] %v, %v k/s, %v%%", worker_n, name, downloaded*1000/1024/(GetNowEpochInMilli()-task_start_time), 100*downloaded/length)
 				finished_c <- DownloadChunk{Data: chunk_data, Name: name, Start: start}
 				start += int64(len(chunk_data))
 			}
