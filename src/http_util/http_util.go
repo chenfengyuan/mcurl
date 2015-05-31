@@ -121,8 +121,8 @@ func Downloader(task_info_c <-chan DownloadTaskInfo, finished_c chan<- DownloadC
 		var downloaded int64 = 0
 		task_start_time := GetNowEpochInMilli()
 		for try_times := 0; try_times < 3; try_times++ {
-			chunk_datas := make(chan []byte, 1)
-			go RangeGet(task_info.Request, start, length, chunk_datas)
+			chunk_datas := make(chan []byte)
+			go RangeGet(task_info.Request, start, length-(start-task_info.Start), chunk_datas)
 			for chunk_data := range chunk_datas {
 				downloaded += int64(len(chunk_data))
 				log.Printf("Wroker[%v] %v %v k/s %v%%", name, worker_n, downloaded*1000/1024/(GetNowEpochInMilli()-task_start_time), 100*downloaded/length)
