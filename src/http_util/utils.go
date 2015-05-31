@@ -2,7 +2,7 @@ package http_util
 
 import (
 	"fmt"
-	// "log"
+	"log"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -11,11 +11,12 @@ import (
 	"time"
 )
 
-var Get func(string, http.Header) (*http.Response, error) = get
+var Get func(string, http.Header, time.Duration) (*http.Response, error) = get
 
-func get(url_ string, header http.Header) (*http.Response, error) {
+func get(url_ string, header http.Header, timeout time.Duration) (*http.Response, error) {
 	for i := 0; i < 10; i += 1 {
 		client := http.Client{CheckRedirect: CheckRedirect}
+		client.Timeout = timeout
 		req, err := http.NewRequest("GET", url_, nil)
 		if err != nil {
 			return nil, err
@@ -42,6 +43,72 @@ func get(url_ string, header http.Header) (*http.Response, error) {
 	}
 	return nil, fmt.Errorf("unknow error")
 }
+
+func RangeGet(req Request, start, length int64, out chan<- []byte) {
+	header := http.Header{}
+	for k, vs := range req.header {
+		for _, v := range vs {
+			header.Add(k, v)
+		}
+	}
+	last_downloaded_block_time := GetNowEpochInSecond()
+	header.Add("Range", fmt.Sprintf("bytes=%d-", start))
+	resp, err := get(req.url, header, 0)
+	go func() {
+		for {
+			time.Sleep(TimeoutOfPerBlockDownload)
+			now := GetNowEpochInSecond()
+			if time.Second*time.Duration(now-last_downloaded_block_time) > TimeoutOfPerBlockDownload {
+				log.Print("timeout")
+				resp.Body.Close()
+				break
+			}
+		}
+	}()
+	if err != nil {
+		close(out)
+		return
+	}
+	defer func() {
+		resp.Body.Close()
+	}()
+	if resp.Header.Get("Content-Range") == "" {
+		close(out)
+		return
+	}
+	// if resp.StatusCode != 206 {
+	// 	close(out)
+	// 	return
+	// }
+	buf := make([]byte, BlockSize)
+	var downloaded int64 = 0
+	base := 0
+	for {
+		n, err := resp.Body.Read(buf[base:])
+		downloaded += int64(n)
+		base += n
+		if err != nil {
+			log.Print(err)
+			out <- buf[:base]
+			close(out)
+			return
+		} else {
+			if downloaded >= length {
+				out <- buf[:base-int(downloaded-length)]
+				last_downloaded_block_time = GetNowEpochInSecond()
+				close(out)
+				return
+			}
+			if int64(base) >= BlockSize {
+				out <- buf[:base]
+				last_downloaded_block_time = GetNowEpochInSecond()
+				buf = make([]byte, BlockSize)
+				base = 0
+			}
+		}
+	}
+}
+
 func get_content_length(header http.Header) (rv int64, err error) {
 	defer func() {
 		if x := recover(); x != nil {
@@ -62,12 +129,14 @@ func get_attchment_filename(header http.Header) (fn string, err error) {
 		return "", fmt.Errorf("wrong Content-Disposition :%v", content_disposition)
 	}
 	fn = tmp[0][1]
-	re = regexp.MustCompile("/|\x00|\"|'")
+	re = regexp.MustCompile("/|\x00")
 	fn = re.ReplaceAllString(fn, " ")
+	re = regexp.MustCompile("\"|'")
+	fn = re.ReplaceAllString(fn, "")
 	return
 }
 func GetResourceInfo(url_ string, header http.Header) (resource_info ResourceInfo, err error) {
-	resp, err := get(url_, header)
+	resp, err := get(url_, header, TimeoutOfGetResourceInfo)
 	if err != nil {
 		return
 	}
@@ -91,4 +160,8 @@ func ConvertWaitGroupToBoolChan(wg *sync.WaitGroup, c chan<- bool) {
 func GetNowEpochInMilli() int64 {
 	now := time.Now()
 	return now.UnixNano() / 1000000
+}
+func GetNowEpochInSecond() int64 {
+	now := time.Now()
+	return now.UnixNano() / 1000000000
 }

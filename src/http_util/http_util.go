@@ -4,13 +4,14 @@ import (
 	// "crypto/md5"
 	// "errors"
 	"curl_cmd"
-	"fmt"
+	// "fmt"
 	"io"
 	"log"
 	"net/http"
 	"net/url"
 	"os"
 	"sync"
+	"time"
 )
 
 const ChromeUserAgent string = "Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.17 (KHTML, like Gecko) Chrome/24.0.1312.56 Safari/537.17"
@@ -40,8 +41,11 @@ func (e myUrlEror) Error() string {
 var open_file_func openFileFunc = NewFile
 
 const (
-	BlockSize         int64 = 1024 * 1024
-	NBlocksPerRequest       = 300
+	BlockSize                 int64 = 1024 * 1024
+	NBlocksPerRequest               = 300
+	DownloaderChanBufferSize        = 100
+	TimeoutOfGetResourceInfo        = 60 * time.Second
+	TimeoutOfPerBlockDownload       = 1024 / 42 * time.Second
 )
 
 type DownloadRange struct {
@@ -106,56 +110,6 @@ type DownloadChunk struct {
 	Data  []byte
 	Start int64
 	Name  string
-}
-
-func RangeGet(req Request, start, length int64, out chan<- []byte) {
-	header := http.Header{}
-	for k, vs := range req.header {
-		for _, v := range vs {
-			header.Add(k, v)
-		}
-	}
-	header.Add("Range", fmt.Sprintf("bytes=%d-", start))
-	resp, err := get(req.url, header)
-	if err != nil {
-		close(out)
-		return
-	}
-	defer func() {
-		resp.Body.Close()
-	}()
-	if resp.Header.Get("Content-Range") == "" {
-		close(out)
-		return
-	}
-	// if resp.StatusCode != 206 {
-	// 	close(out)
-	// 	return
-	// }
-	buf := make([]byte, BlockSize)
-	var downloaded int64 = 0
-	base := 0
-	for {
-		n, err := resp.Body.Read(buf[base:])
-		downloaded += int64(n)
-		base += n
-		if err != nil {
-			out <- buf[:base]
-			close(out)
-			return
-		} else {
-			if downloaded >= length {
-				out <- buf[:base-int(downloaded-length)]
-				close(out)
-				return
-			}
-			if int64(base) >= BlockSize {
-				out <- buf[:base]
-				buf = make([]byte, BlockSize)
-				base = 0
-			}
-		}
-	}
 }
 
 func Downloader(task_info_c <-chan DownloadTaskInfo, finished_c chan<- DownloadChunk, failed_task_info_c chan<- DownloadTaskInfo, wg *sync.WaitGroup, worker_n int) {
@@ -267,7 +221,7 @@ func Run(curl_cmd_strs []string, num_of_workers int) {
 
 	go Receiver(file_download_info_c, chunk_c, receiver_finish_channel)
 	for i := 0; i < num_of_workers; i++ {
-		tmp := make(chan DownloadTaskInfo, 1)
+		tmp := make(chan DownloadTaskInfo, DownloaderChanBufferSize)
 		downloader_task_info_cs[i] = tmp
 		go Downloader(tmp, chunk_c, failed_task_info_c, &task_info_wait_group, i)
 	}
@@ -280,7 +234,7 @@ func Run(curl_cmd_strs []string, num_of_workers int) {
 		worker_n++
 		worker_n = worker_n % num_of_workers
 		url := curl_cmd.ParseCmdStr(curl_cmd_str)[1]
-		log.Printf("%v %v", url, worker_n)
+		// log.Printf("%v %v", url, worker_n)
 		url_chan_map[url] = worker_n
 		header := curl_cmd.GetHeadersFromCurlCmd(curl_cmd_str)
 		req := Request{url, header}
