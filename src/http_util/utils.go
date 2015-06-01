@@ -54,15 +54,28 @@ func RangeGet(req Request, start, length int64, out chan<- []byte) {
 	last_downloaded_block_time := GetNowEpochInSecond()
 	header.Add("Range", fmt.Sprintf("bytes=%d-", start))
 	resp, err := get(req.url, header, 0)
+	mutex := sync.Mutex{}
+	finished := false
+	defer func() {
+		mutex.Lock()
+		finished = true
+		mutex.Unlock()
+	}()
 	go func() {
 		for {
 			time.Sleep(TimeoutOfPerBlockDownload)
+			mutex.Lock()
+			if finished {
+				mutex.Unlock()
+				return
+			}
 			now := GetNowEpochInSecond()
 			if time.Second*time.Duration(now-last_downloaded_block_time) > TimeoutOfPerBlockDownload {
 				log.Print("timeout")
 				resp.Body.Close()
 				break
 			}
+			mutex.Unlock()
 		}
 	}()
 	if err != nil {
@@ -95,13 +108,17 @@ func RangeGet(req Request, start, length int64, out chan<- []byte) {
 		} else {
 			if downloaded >= length {
 				out <- buf[:base-int(downloaded-length)]
+				mutex.Lock()
 				last_downloaded_block_time = GetNowEpochInSecond()
+				mutex.Unlock()
 				close(out)
 				return
 			}
 			if int64(base) >= BlockSize {
 				out <- buf[:base]
+				mutex.Lock()
 				last_downloaded_block_time = GetNowEpochInSecond()
+				mutex.Unlock()
 				buf = make([]byte, BlockSize)
 				base = 0
 			}

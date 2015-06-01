@@ -6,6 +6,11 @@ import (
 	"os"
 )
 
+const (
+	FileDownloadInfoSuffix     string = ".json"
+	FileDownloadInfoTempSuffix string = ".temp.json"
+)
+
 type FileDownloadInfo struct {
 	Length int64
 	MD5    string
@@ -18,7 +23,7 @@ func (info *FileDownloadInfo) Sync() error {
 	if err != nil {
 		return err
 	}
-	f, err := open_file_func(info.Name + ".info.new")
+	f, err := open_file_func(info.Name + FileDownloadInfoTempSuffix)
 	if err != nil {
 		return err
 	}
@@ -34,7 +39,7 @@ func (info *FileDownloadInfo) Sync() error {
 	if err != nil {
 		return err
 	}
-	os.Rename(info.Name+".info.new", info.Name+".info")
+	os.Rename(info.Name+FileDownloadInfoTempSuffix, info.Name+FileDownloadInfoSuffix)
 	// Truncate(info.Name, info.Length)
 	return nil
 }
@@ -85,7 +90,7 @@ func (info *FileDownloadInfo) Finished() bool {
 }
 
 func NewFileDownloadInfo(name string, file_size int64) (*FileDownloadInfo, error) {
-	info_file, err := open_file_func(name + ".info")
+	info_file, err := open_file_func(name + FileDownloadInfoSuffix)
 	if err != nil {
 		return nil, err
 	}
