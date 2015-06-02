@@ -335,7 +335,7 @@ func Run(curl_cmd_strs []string, num_of_workers int) {
 	go Receiver(file_download_info_c, chunk_c)
 
 	for i_curl_cmd_str, curl_cmd_str := range curl_cmd_strs {
-		if i > 0 {
+		if i_curl_cmd_str > 0 {
 			time.Sleep(10 * time.Second)
 		}
 		url := curl_cmd.ParseCmdStr(curl_cmd_str)[1]
