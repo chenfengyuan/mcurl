@@ -312,6 +312,7 @@ func Receiver(fileDownloadInfoC <-chan FileDownloadInfo, chunks <-chan DownloadC
 				log.Fatalf("can't sync info, %v", err)
 			}
 			if info.Finished() {
+				log.Printf("finished")
 				delete(fileDownloadInfoMap, chunk.Name)
 				fd.Close()
 				delete(fileFdMap, chunk.Name)

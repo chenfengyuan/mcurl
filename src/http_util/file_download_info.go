@@ -71,7 +71,7 @@ func (info *FileDownloadInfo) UndownloadedRanges() []DownloadRange {
 				break
 			}
 		}
-		if j == len(info.Blocks)-1 {
+		if j == len(info.Blocks) {
 			rv = append(rv, DownloadRange{int64(i) * int64(BlockSize), int64(info.Length) - int64(i)*BlockSize})
 		} else {
 			rv = append(rv, DownloadRange{int64(i) * int64(BlockSize), int64(j-i) * int64(BlockSize)})
