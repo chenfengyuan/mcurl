@@ -3,13 +3,16 @@ package http_util
 import (
 	// "crypto/md5"
 	// "errors"
+	"bytes"
 	"curl_cmd"
-	// "fmt"
+	"fmt"
+	"http_info"
 	"io"
 	"log"
 	"net/http"
 	"net/url"
 	"os"
+	"sync"
 	"time"
 )
 
@@ -245,8 +248,25 @@ func downloader(task_info_c <-chan DownloadTaskInfo, chunk_c chan<- DownloadChun
 }
 
 func Receiver(fileDownloadInfoC <-chan FileDownloadInfo, chunks <-chan DownloadChunk) {
+	info := ""
+	info_mutex := sync.Mutex{}
+	go http_info.Server(&info, &info_mutex)
 	fileDownloadInfoMap := make(map[string]FileDownloadInfo)
 	fileFdMap := make(map[string]File)
+	update_info := func() {
+		buf := bytes.NewBuffer(nil)
+		for filename, dinfo := range fileDownloadInfoMap {
+			a := len(dinfo.Blocks)
+			finished := 0
+			for _, x := range dinfo.Blocks {
+				if x == true {
+					finished++
+				}
+			}
+			fmt.Fprintf(buf, "%v %v%% %vMB\n", filename, 100*finished/a, finished)
+		}
+		info = buf.String()
+	}
 	for {
 		select {
 		case info, ok := <-fileDownloadInfoC:
@@ -300,6 +320,7 @@ func Receiver(fileDownloadInfoC <-chan FileDownloadInfo, chunks <-chan DownloadC
 					return
 				}
 			}
+			update_info()
 		}
 	}
 }

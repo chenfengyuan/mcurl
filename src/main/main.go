@@ -11,16 +11,6 @@ func init() {
 	log.SetFlags(log.Lshortfile | log.LstdFlags)
 }
 
-func test() {
-	a := []int{1, 2, 3}
-	log.Print(a[0])
-	a = a[1:]
-	log.Print(a[0])
-	a = a[1:]
-	log.Print(a[0])
-	a = a[1:]
-}
-
 func main() {
 	if len(os.Args) != 2 {
 		log.Fatal("Usage: mcurl curl-cmd-file")
