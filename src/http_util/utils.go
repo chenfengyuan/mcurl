@@ -154,10 +154,11 @@ func get_attchment_filename(header http.Header) (fn string, err error) {
 }
 func GetResourceInfo(url_ string, header http.Header) (resource_info ResourceInfo, err error) {
 	for i := 0; i < 3; i++ {
-		resp, err := get(url_, header, TimeoutOfGetResourceInfo)
+		var resp *http.Response
+		resp, err = get(url_, header, TimeoutOfGetResourceInfo)
 		if err != nil {
 			if i < 2 {
-				time.Sleep((10 + 30*i) * time.Second)
+				time.Sleep(time.Duration(10+30*i) * time.Second)
 				continue
 			}
 			return
@@ -173,6 +174,7 @@ func GetResourceInfo(url_ string, header http.Header) (resource_info ResourceInf
 		}
 		return
 	}
+	return
 }
 
 func ConvertWaitGroupToBoolChan(wg *sync.WaitGroup, c chan<- bool) {
