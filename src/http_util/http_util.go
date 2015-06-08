@@ -250,7 +250,10 @@ func downloader(task_info_c <-chan DownloadTaskInfo, chunk_c chan<- DownloadChun
 	}
 }
 
-func Receiver(fileDownloadInfoC <-chan FileDownloadInfo, chunks <-chan DownloadChunk) {
+func Receiver(fileDownloadInfoC <-chan FileDownloadInfo, chunks <-chan DownloadChunk, wg *sync.WaitGroup) {
+	defer func() {
+		wg.Done()
+	}()
 	info := ""
 	info_mutex := sync.Mutex{}
 	go http_info.Server(&info, &info_mutex)
@@ -334,8 +337,10 @@ func Run(curl_cmd_strs []string, num_of_workers int) {
 	file_name_reqs_map := make(map[string]*[]Request)
 	file_download_info_c := make(chan FileDownloadInfo, 1)
 	file_download_infos := []FileDownloadInfo{}
+	receiver_wait_group := sync.WaitGroup{}
 
-	go Receiver(file_download_info_c, chunk_c)
+	receiver_wait_group.Add(1)
+	go Receiver(file_download_info_c, chunk_c, &receiver_wait_group)
 
 	for _, curl_cmd_str := range curl_cmd_strs {
 		url := curl_cmd.ParseCmdStr(curl_cmd_str)[1]
@@ -389,6 +394,8 @@ func Run(curl_cmd_strs []string, num_of_workers int) {
 	for x := range worker_out {
 		log.Print(x)
 	}
+	close(chunk_c)
+	receiver_wait_group.Wait()
 	// 	all_task_finish_c := make(chan bool)
 	// 	go ConvertWaitGroupToBoolChan(&task_info_wait_group, all_task_finish_c)
 	// 	close(file_download_info_c)
