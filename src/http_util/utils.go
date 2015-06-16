@@ -146,6 +146,10 @@ func get_attchment_filename(header http.Header) (fn string, err error) {
 		return "", fmt.Errorf("wrong Content-Disposition :%v", content_disposition)
 	}
 	fn = tmp[0][1]
+	fn, err = url.QueryUnescape(fn)
+	if err != nil {
+		return
+	}
 	re = regexp.MustCompile("/|\x00")
 	fn = re.ReplaceAllString(fn, " ")
 	re = regexp.MustCompile("\"|'")
