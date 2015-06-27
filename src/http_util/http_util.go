@@ -377,6 +377,9 @@ func Run(curl_cmd_strs []string, num_of_workers int) {
 		file_download_info_c <- *file_download_info
 		file_download_infos = append(file_download_infos, *file_download_info)
 	}
+	if len(line_download_infos) == 0 {
+		return
+	}
 	for file_name, reqs := range file_name_reqs_map {
 		log.Printf("%v %v", file_name, len(*reqs))
 	}
