@@ -44,7 +44,6 @@ var open_file_func openFileFunc = NewFile
 
 const (
 	BlockSize                 int64 = 1024 * 1024
-	NBlocksPerRequest               = 100
 	TimeoutOfGetResourceInfo        = 60 * time.Second
 	TimeoutOfPerBlockDownload       = 1024 / 42 * time.Second
 )

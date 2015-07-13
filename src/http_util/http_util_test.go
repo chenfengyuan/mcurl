@@ -55,7 +55,7 @@ func TestFileDownloadInfo(t *testing.T) {
 		t.Fatalf("wrong filename, expect %v, get %v", test_file, info.Name)
 	}
 	ranges := info.UndownloadedRanges()
-	if tmp_range := (DownloadRange{0, NBlocksPerRequest * BlockSize}); ranges[0] != tmp_range {
+	if tmp_range := (DownloadRange{0, GetLargestNBlocks(info.Length) * BlockSize}); ranges[0] != tmp_range {
 		t.Fatalf("wrong range, expect %v, get %v", tmp_range, ranges[0])
 	}
 	if tmp := 31; len(ranges) != tmp {
@@ -70,11 +70,11 @@ func TestFileDownloadInfo(t *testing.T) {
 		t.Fatalf("wrong range, expect %v, get %v", tmp_range, ranges[0])
 	}
 	for i := 1; i < len(ranges)-1; i++ {
-		if tmp_range := (DownloadRange{int64(i-1)*NBlocksPerRequest*BlockSize + BlockSize*2, NBlocksPerRequest * BlockSize}); tmp_range != ranges[i] {
+		if tmp_range := (DownloadRange{int64(i-1)*GetLargestNBlocks(info.Length)*BlockSize + BlockSize*2, GetLargestNBlocks(info.Length) * BlockSize}); tmp_range != ranges[i] {
 			t.Fatalf("wrong range, expect %v, get #%v %v", tmp_range, i, ranges[i])
 		}
 	}
-	if tmp_range := (DownloadRange{30*NBlocksPerRequest*BlockSize + BlockSize*2, info.Length - 30*NBlocksPerRequest*BlockSize - BlockSize*2}); tmp_range != ranges[31] {
+	if tmp_range := (DownloadRange{30*GetLargestNBlocks(info.Length)*BlockSize + BlockSize*2, info.Length - 30*GetLargestNBlocks(info.Length)*BlockSize - BlockSize*2}); tmp_range != ranges[31] {
 		t.Fatalf("wrong range, expect %v, get #%v %v", tmp_range, 31, ranges[31])
 	}
 	info.Sync()

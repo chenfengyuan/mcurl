@@ -57,6 +57,11 @@ func (info *FileDownloadInfo) Update(start int64, length int64) {
 	}
 }
 
+func GetLargestNBlocks(fileSize int64) int64 {
+	rv := fileSize / BlockSize / 2
+	return rv + 1
+}
+
 func (info *FileDownloadInfo) UndownloadedRanges() []DownloadRange {
 	rv := make([]DownloadRange, 0)
 	i := 0
@@ -67,7 +72,7 @@ func (info *FileDownloadInfo) UndownloadedRanges() []DownloadRange {
 		}
 		j := i
 		for ; j < len(info.Blocks) && info.Blocks[j] == false; j++ {
-			if j-i >= NBlocksPerRequest {
+			if j-i >= int(GetLargestNBlocks(info.Length)) {
 				break
 			}
 		}
