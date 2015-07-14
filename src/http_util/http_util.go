@@ -224,7 +224,7 @@ func downloader(task_info_c <-chan DownloadTaskInfo, chunk_c chan<- DownloadChun
 		log.Printf("D[%v] %v %v %v", name, host, worker_n, task_info.DownloadRange)
 		var downloaded int64 = 0
 		task_start_time := GetNowEpochInMilli()
-		for try_times := 0; try_times < 3; try_times++ {
+		for try_times := 0; try_times < 10; try_times++ {
 			if try_times > 0 {
 				time.Sleep(time.Second * time.Duration(10+30*try_times))
 			}
