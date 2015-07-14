@@ -224,9 +224,9 @@ func downloader(task_info_c <-chan DownloadTaskInfo, chunk_c chan<- DownloadChun
 		log.Printf("D[%v] %v %v %v", name, host, worker_n, task_info.DownloadRange)
 		var downloaded int64 = 0
 		task_start_time := GetNowEpochInMilli()
-		for try_times := 0; try_times < 10; try_times++ {
+		for try_times := 0; try_times < 50; try_times++ {
 			if try_times > 0 {
-				time.Sleep(time.Second * time.Duration(10+30*try_times))
+				time.Sleep(time.Second * time.Duration(60+60*try_times))
 			}
 			chunk_datas := make(chan []byte)
 			go RangeGet(task_info.Request, start, length-(start-task_info.Start), chunk_datas)
