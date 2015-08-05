@@ -259,7 +259,7 @@ func Receiver(fileDownloadInfoC <-chan FileDownloadInfo, chunks <-chan DownloadC
 	info := ""
 	info_mutex := sync.Mutex{}
 	go http_info.Server(&info, &info_mutex)
-	fileDownloadInfoMap := make(map[string]FileDownloadInfo)
+	fileDownloadInfoMap := make(map[string]*FileDownloadInfo)
 	fileFdMap := make(map[string]File)
 	update_info := func() {
 		buf := bytes.NewBuffer(nil)
@@ -275,6 +275,14 @@ func Receiver(fileDownloadInfoC <-chan FileDownloadInfo, chunks <-chan DownloadC
 		}
 		info = buf.String()
 	}
+	syncAllFunc := func() {
+		for k := range fileDownloadInfoMap {
+			fileFdMap[k].Sync()
+			fileDownloadInfoMap[k].Sync()
+		}
+	}
+	defer syncAllFunc()
+	last_sync_time := make(map[string]time.Time)
 	for {
 		select {
 		case info, ok := <-fileDownloadInfoC:
@@ -288,7 +296,7 @@ func Receiver(fileDownloadInfoC <-chan FileDownloadInfo, chunks <-chan DownloadC
 			if info.Finished() {
 				break
 			}
-			fileDownloadInfoMap[info.Name] = info
+			fileDownloadInfoMap[info.Name] = &info
 			fd, err := open_file_func(info.Name)
 			if err != nil {
 				log.Fatalf("can't open %v", info.Name)
@@ -310,16 +318,16 @@ func Receiver(fileDownloadInfoC <-chan FileDownloadInfo, chunks <-chan DownloadC
 			if err != nil {
 				log.Fatalf("can't write content to file : %v", chunk.Name)
 			}
-			err = fd.Sync()
-			if err != nil {
-				log.Fatalf("can't write content to file : %v", chunk.Name)
-			}
 			info.Update(chunk.Start, int64(len(chunk.Data)))
-			err = info.Sync()
-			if err != nil {
-				log.Fatalf("can't sync info, %v", err)
-			}
 			if info.Finished() {
+				err = fd.Sync()
+				if err != nil {
+					log.Fatalf("can't write content to file : %v", chunk.Name)
+				}
+				err = info.Sync()
+				if err != nil {
+					log.Fatalf("can't sync info, %v", err)
+				}
 				log.Printf("finished")
 				delete(fileDownloadInfoMap, chunk.Name)
 				fd.Close()
@@ -327,6 +335,17 @@ func Receiver(fileDownloadInfoC <-chan FileDownloadInfo, chunks <-chan DownloadC
 				// log.Print(info, info.Finished(), len(fileDownloadInfoMap))
 				if len(fileDownloadInfoMap) == 0 {
 					return
+				}
+			}
+			if last_sync_time[chunk.Name].Add(time.Second * 10).Before(time.Now()) {
+				last_sync_time[chunk.Name] = time.Now()
+				err = fd.Sync()
+				if err != nil {
+					log.Fatalf("can't sync content to file : %v", chunk.Name)
+				}
+				err = info.Sync()
+				if err != nil {
+					log.Fatalf("can't sync info, %v", err)
 				}
 			}
 			update_info()
@@ -401,53 +420,4 @@ func Run(curl_cmd_strs []string, num_of_workers int) {
 	}
 	close(chunk_c)
 	receiver_wait_group.Wait()
-	// 	all_task_finish_c := make(chan bool)
-	// 	go ConvertWaitGroupToBoolChan(&task_info_wait_group, all_task_finish_c)
-	// 	close(file_download_info_c)
-	// 	for file_name, reqs := range file_name_reqs_map {
-	// 		log.Printf("%v %v", file_name, len(*reqs))
-	// 	}
-	// 	worker_n = -1
-	// 	for _, task_info := range task_infos {
-	// 		worker_n++
-	// 		reqs := file_name_reqs_map[task_info.Name]
-	// 		req := (*reqs)[worker_n%len(*reqs)]
-	// 		task_info.Request = req
-	// 		// log.Printf("%v %v %v", task_info.Name, task_info.DownloadRange, url_chan_map[task_info.url])
-	// 		select {
-	// 		case downloader_task_info_cs[url_chan_map[task_info.url]] <- task_info:
-	// 		case failed_task_info := <-failed_task_info_c:
-	// 			if failed_task_info.FailedTimes < 3 {
-	// 				reqs := file_name_reqs_map[failed_task_info.Name]
-	// 				last_worker_n := failed_task_info.LastWorkerN
-	// 				new_req := (*reqs)[(last_worker_n+1)%len(*reqs)]
-	// 				failed_task_info.Request = new_req
-	// 				downloader_task_info_cs[url_chan_map[new_req.url]] <- failed_task_info
-	// 			} else {
-	// 				task_info_wait_group.Done()
-	// 			}
-	// 		}
-	// 	}
-	// ForLoop:
-	// 	for {
-	// 		select {
-	// 		case failed_task_info := <-failed_task_info_c:
-	// 			if failed_task_info.FailedTimes < 3 {
-	// 				reqs := file_name_reqs_map[failed_task_info.Name]
-	// 				last_worker_n := failed_task_info.LastWorkerN
-	// 				new_req := (*reqs)[(last_worker_n+1)%len(*reqs)]
-	// 				failed_task_info.Request = new_req
-	// 				downloader_task_info_cs[url_chan_map[new_req.url]] <- failed_task_info
-	// 			} else {
-	// 				task_info_wait_group.Done()
-	// 			}
-	// 		case <-all_task_finish_c:
-	// 			for _, chan_ := range downloader_task_info_cs {
-	// 				close(chan_)
-	// 			}
-	// 			close(chunk_c)
-	// 			close(failed_task_info_c)
-	// 			break ForLoop
-	// 		}
-	// 	}
 }
