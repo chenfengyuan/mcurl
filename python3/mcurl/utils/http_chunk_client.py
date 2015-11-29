@@ -5,10 +5,10 @@ import gevent.timeout
 import logging
 __author__ = 'chenfengyuan'
 
-# PROXIES = {
-#     'http': 'http://127.0.0.1:9999',
-#     'https': 'http://127.0.0.1:9999',
-# }
+PROXIES = {
+    'http': 'http://127.0.0.1:9999',
+    'https': 'http://127.0.0.1:9999',
+}
 PROXIES = {}
 logger = logging.getLogger(__name__)
 
@@ -41,6 +41,9 @@ class HttpChunkClient:
     def __init__(self, url, headers, range_start, range_end, chunk_size, chunk_timeout, filesize):
         headers = headers + [['Range', 'bytes=%d-' % range_start]]
         headers = dict(headers)
+        if 'baidu.com' in headers['Host']:
+            headers['User-Agent'] = 'netdisk;5.2.7.2;PC;PC-Windows;6.2.9200;WindowsBaiduYunGuanJia'
+        del headers['Host']
         self.range_end = range_end
         self.range_start = range_start
         self.headers = headers

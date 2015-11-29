@@ -3,7 +3,7 @@
 from gevent.queue import Queue
 from gevent.pool import Group
 from gevent import spawn_later
-from mcurl.downloader.file_info import FileInfo, FileChunk
+from mcurl.downloader.file_info import FileInfo, FileChunk, Request
 from mcurl.downloader.range_downloader import RangeDownloader
 from mcurl.downloader.queue_data_types import Classification
 import logging
@@ -28,9 +28,13 @@ class FileDownloader:
 
     def start(self):
         logger.debug('start downloading file %s , get %d req', self.file_info.filename, len(self.file_info.requests))
+        i = 0
         for req in self.file_info.requests:
+            assert isinstance(req, Request)
+            logger.debug('%s: %s <-> %d', self.file_info.filename, dict(req.headers)['Host'], i)
             range_downloader = RangeDownloader(self.file_info.filesize, req, self.inq, self.file_info.ChunkSize,
-                                               self.file_info.filename)
+                                               self.file_info.filename, i)
+            i += 1
             self.group.spawn(range_downloader.start)
 
         while True:
