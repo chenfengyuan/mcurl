@@ -1,6 +1,14 @@
 #!/usr/bin/env python
 # coding=utf-8
 
+import json
+import logging
+import time
+import urllib.parse
+from collections import namedtuple
+from io import FileIO
+from itertools import chain
+
 from sqlalchemy import (
     Column,
     String,
@@ -8,26 +16,17 @@ from sqlalchemy import (
     DateTime,
     PickleType
 )
-from sqlalchemy import create_engine
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, scoped_session
-from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.sql.functions import now
-from collections import namedtuple
+
+from mcurl.downloader import DBSession, engine, Base
 from mcurl.utils.alogrithm import find
-from io import FileIO
-import time
-import json
-import urllib.parse
-from itertools import chain
-Base = declarative_base()
-engine = create_engine('sqlite:///file_info.sqlite')
 
 __author__ = 'chenfengyuan'
 
-DBSession = scoped_session(sessionmaker(bind=engine))
-
 Request = namedtuple('Request', ('url', 'headers'))
+Range = namedtuple('Range', ('start', 'end'))
+
+logger = logging.getLogger(__name__)
 
 
 class FileChunk:
@@ -46,14 +45,13 @@ class FileChunk:
 
 class FileInfo(Base):
     __tablename__ = 'file_info'
-    __mutable_fields__ = {'requests', 'blocks'}
 
     id = Column(Integer, primary_key=True, nullable=False)
     filename = Column(String, nullable=False, unique=True, index=True)
     filesize = Column(Integer, nullable=False, default=0)
     requests = Column(PickleType, nullable=False)
     """:type: List[Request]"""
-    blocks = Column(PickleType, nullable=False)
+    chunks = Column(PickleType, nullable=False)
     """:type: List[Bool]"""
     created_at = Column(DateTime(timezone=True), default=now())
     updated_at = Column(DateTime(timezone=True), default=now(), onupdate=now())
@@ -67,6 +65,14 @@ class FileInfo(Base):
         super(FileInfo, self).__init__(**kwargs)
         self.fp = None
         """:type: FileIO"""
+        self.start_downloading_time = None
+
+    def init(self):
+        self.start_downloading_time = [0] * len(self.chunks)
+        try:
+            self.fp = open(self.filename, 'r+b')
+        except FileNotFoundError:
+            self.fp = open(self.filename, 'w+b')
 
     @classmethod
     def create_from_download_info(cls, data):
@@ -81,14 +87,16 @@ class FileInfo(Base):
             blocks.append(False)
         return cls.get_or_new(filename, filesize, requests, blocks)
 
-    def sync(self):
-        for field in self.__mutable_fields__:
-            flag_modified(self, field)
+    def save(self):
+        DBSession().add(self)
+        DBSession().commit()
 
     @classmethod
     def get(cls, filename):
         obj = DBSession().query(cls).filter(cls.filename == filename).first()
         """:type: FileInfo"""
+        if obj:
+            obj.init()
         return obj
 
     def merge_requests(self, requests):
@@ -117,41 +125,49 @@ class FileInfo(Base):
             assert blocks
             obj = FileInfo(filename=filename, filesize=filesize)
             obj.requests = requests
-            obj.blocks = blocks
-            DBSession().add(obj)
-            DBSession().commit()
+            obj.chunks = blocks
+            obj.init()
+        DBSession().add(obj)
+        DBSession().commit()
         return obj
 
-    def write(self, chunk: FileChunk):
+    def chunk_is_downloaded_before(self, chunk: FileChunk):
         assert chunk.start % self.ChunkSize == 0
-        end = chunk.start + len(chunk.size)
+        end = chunk.start + chunk.size
+        assert end % self.ChunkSize == 0 or end == self.filesize
+        block_i = chunk.start // self.ChunkSize
+        return self.chunks[block_i] == True
+
+    def write(self, chunk: FileChunk):
+        DBSession().merge(self)
+        assert chunk.start % self.ChunkSize == 0
+        end = chunk.start + chunk.size
         assert end % self.ChunkSize == 0 or end == self.filesize
 
         self.fp.seek(chunk.start)
         for tmp in chunk.data:
             self.fp.write(tmp)
         self.fp.flush()
-
         block_i = chunk.start // self.ChunkSize
-        while block_i * self.ChunkSize < end:
-            self.blocks[block_i] = True
-        DBSession().add(self)
+        self.chunks[block_i] = True
+        logger.debug('dbsession: %s %s', DBSession().dirty, DBSession().new)
         DBSession().commit()
 
     def _get_undownload_ranges(self):
         start = 0
         rv = []
-        while True:
-            start = find(self.blocks, start, False)
+        while start < len(self.chunks):
+            start = find(self.chunks, start, False)
             if start is None:
                 break
-            end = find(self.blocks, start, True)
+            end = find(self.chunks, start, True)
             if end is None:
-                end = len(self.blocks)
+                end = len(self.chunks)
             rv.append((start, end))
+            start = end
         return rv
 
-    def get_ranges(self):
+    def get_range(self):
         ranges = [(self.start_downloading_time[x[0]], x) for x in self._get_undownload_ranges()]
         ranges.sort()
         now_ = time.time()
@@ -163,6 +179,17 @@ class FileInfo(Base):
                     range_[1][1] - range_[1][0] >= self.MinBlockLength:
                 start = (range_[1][1] - range_[1][0]) // 2 + range_[1][0]
                 return start, range_[1][1],
+
+    def get_range_and_mark_downloading_time(self):
+        rv = self.get_range()
+        if rv:
+            self.start_downloading_time[rv[0]] = time.time()
+            return Range(rv[0] * self.ChunkSize, rv[1] * self.ChunkSize)
+        else:
+            return rv
+
+    def is_finished(self):
+        return all(self.chunks)
 
 Base.metadata.create_all(engine)
 del FileIO

@@ -6,3 +6,4 @@ pylru==1.0.9
 https://github.com/BayanGroup/expiringdict/archive/master.zip
 zmq
 sqlalchemy
+requests

@@ -5,7 +5,7 @@ __author__ = 'chenfengyuan'
 
 def find(arr: list, start, value):
     for i in range(start, len(arr)):
-        if i == value:
+        if arr[i] == value:
             return i
     else:
         return None
