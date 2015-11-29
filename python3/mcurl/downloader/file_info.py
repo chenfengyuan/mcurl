@@ -57,10 +57,8 @@ class FileInfo(Base):
     updated_at = Column(DateTime(timezone=True), default=now(), onupdate=now())
 
     ChunkSize = 1024 * 1024
-    MinBlockLength = 50
-    FreeBlockSplitLength = 100
+    MinBlockSplitLength = 60
     MaxBlockDownloadTime = ChunkSize / (50 * 1024)
-    MinBlockSplitTime = ChunkSize / (800 * 1024)
 
     def __init__(self, **kwargs):
         super(FileInfo, self).__init__(**kwargs)
@@ -177,12 +175,8 @@ class FileInfo(Base):
                 return range_[1]
         for range_ in ranges:
             size = range_[1][1] - range_[1][0]
-            if size >= self.FreeBlockSplitLength:
+            if size >= self.MinBlockSplitLength:
                 start = (range_[1][1] - range_[1][0]) // 2 + range_[1][0]
-                return start, range_[1][1],
-            if range_[0] + self.MinBlockSplitTime < now_ and \
-                    size >= self.MinBlockLength:
-                start = size // 2 + range_[1][0]
                 return start, range_[1][1],
 
     def get_range_and_mark_downloading_time(self):

@@ -65,6 +65,7 @@ class HttpChunkClient:
             return r
 
     def iter_chunk(self):
+        t = None
         try:
             chunk = Chunk(self.range_start, self.chunk_size)
             self.r = self.get_resp_with_redirect_headers()
@@ -80,6 +81,15 @@ class HttpChunkClient:
                     yield True,
                     return
                 t = gevent.timeout.Timeout.start_new(self.chunk_timeout)
+        except gevent.timeout.Timeout as e:
+            if e is t:
+                logger.info('timeout')
+                yield False,
+                return
+            else:
+                logger.error('unknow timeout %s', e)
+                yield False,
+                return
         except Exception:
             logger.error('failed to download %s', self.url, exc_info=True)
             self.r = None
