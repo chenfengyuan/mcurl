@@ -61,7 +61,8 @@ class HttpChunkClient:
                 url = r.headers['location']
                 continue
             assert r.status_code // 100 == 2, 'get status code: %s' % r.status_code
-            assert int(r.headers['content-length']) + self.range_start == self.filesize
+            assert int(r.headers['content-length']) + self.range_start == self.filesize,\
+                'get file size: %d' % int(r.headers['content-length'])
             return r
 
     def iter_chunk(self):

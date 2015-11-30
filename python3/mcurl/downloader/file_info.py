@@ -133,7 +133,7 @@ class FileInfo(Base):
     def chunk_is_downloaded_before(self, chunk: FileChunk):
         assert chunk.start % self.ChunkSize == 0
         end = chunk.start + chunk.size
-        assert end % self.ChunkSize == 0 or end == self.filesize
+        assert end % self.ChunkSize == 0 or end == self.filesize, 'invalid end %d' % end
         block_i = chunk.start // self.ChunkSize
         return self.chunks[block_i] == True
 
