@@ -17,34 +17,38 @@ logger = logging.getLogger(__name__)
 
 
 class FilesDownloader:
-    def __init__(self, tasks_str, host, port, max_concurrent):
+    def __init__(self, tasks_str, host, port, max_concurrent, filename=None):
         self.client = download_info_client.DownloadInfo(host, port)
         self.tasks_str = tasks_str
         self.tasks = []
         self.max_concurrent = max_concurrent
         self.exit_event = gevent.event.Event()
+        self.filename = filename
 
     def init_tasks(self):
         filenames = list()
         for task_str in self.tasks_str:
             if task_str.isnumeric():
                 info = self.client.get_info(task_str.encode('utf-8'))
-                obj = FileInfo.create_from_download_info(info)
+                obj = FileInfo.create_from_download_info(info, self.filename)
                 if obj.filename not in filenames:
                     filenames.append(obj.filename)
             else:
                 if task_str not in filenames:
                     filenames.append(task_str)
         file_infos = list(map(FileInfo.get, filenames))
+        """:type: List[FileInfo]"""
         DBSession().expunge_all()
         inq = Queue()
         filename_outq_map = {}
         """:type: Dict[str, Queue]"""
         filename_info_map = {}
-        """:type: Dict[str, FileInfo"""
+        """:type: Dict[str, FileInfo]"""
         for filename in filenames:
             filename_outq_map[filename] = Queue()
         for info in file_infos:
+            assert isinstance(info, FileInfo)
+            assert info.requests, "%s.request is empty" % info.filename
             filename_info_map[info.filename] = info
 
         undownload_filenames = list(filenames)
@@ -55,6 +59,11 @@ class FilesDownloader:
             data = inq.get()
             assert data[0] == Classification.FILE_FINISHED
             filename = undownload_filenames.pop(0)
+            info = filename_info_map[filename]
+            """:type: FileInfo"""
+            if info.is_finished():
+                logger.info("%s is finished", filename)
+                continue
             g = gevent.pool.Group()
             obj = FileDownloader(filename_info_map[filename], filename_outq_map[filename], inq, g)
             g.spawn(obj.start)

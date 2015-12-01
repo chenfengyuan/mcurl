@@ -58,6 +58,7 @@ class FileDownloader:
                 else:
                     q.put(Classification.CURREN_OR_NEXT_CHUNK_IS_DOWNLOADED)
             if self.file_info.is_finished():
+                logger.debug('%s finished %s', self.file_info.filename, self.file_info.finished)
                 self.outq.put((Classification.FILE_FINISHED, self.file_info.filename))
                 spawn_later(0, lambda g: g.kill(), self.group)
                 return

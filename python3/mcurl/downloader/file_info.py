@@ -14,7 +14,8 @@ from sqlalchemy import (
     String,
     Integer,
     DateTime,
-    PickleType
+    PickleType,
+    Boolean
 )
 from sqlalchemy.sql.functions import now
 
@@ -53,6 +54,7 @@ class FileInfo(Base):
     """:type: List[Request]"""
     chunks = Column(PickleType, nullable=False)
     """:type: List[Bool]"""
+    finished = Column(Boolean, nullable=False, default=False)
     created_at = Column(DateTime(timezone=True), default=now())
     updated_at = Column(DateTime(timezone=True), default=now(), onupdate=now())
 
@@ -74,10 +76,10 @@ class FileInfo(Base):
             self.fp = open(self.filename, 'w+b')
 
     @classmethod
-    def create_from_download_info(cls, data):
+    def create_from_download_info(cls, data, filename=None):
         data = json.loads(data.decode('utf-8'))
         headers = data['headers']
-        filename = data['filename']
+        filename = filename or data['filename']
         filesize = data['content_length']
         url = data['url']
         requests = [Request(url, headers)]
@@ -138,7 +140,6 @@ class FileInfo(Base):
         return self.chunks[block_i] == True
 
     def write(self, chunk: FileChunk):
-        DBSession().merge(self)
         assert chunk.start % self.ChunkSize == 0
         end = chunk.start + chunk.size
         assert end % self.ChunkSize == 0 or end == self.filesize
@@ -149,10 +150,14 @@ class FileInfo(Base):
         self.fp.flush()
         block_i = chunk.start // self.ChunkSize
         self.chunks[block_i] = True
+        if self.is_finished():
+            logger.debug('set finished True')
+            self.finished = True
         logger.debug('dbsession: %s %s', DBSession().dirty, DBSession().new)
+        DBSession().merge(self)
         DBSession().commit()
 
-    def _get_undownload_ranges(self):
+    def _get_undownload_chunks(self):
         start = 0
         rv = []
         while start < len(self.chunks):
@@ -166,24 +171,26 @@ class FileInfo(Base):
             start = end
         return rv
 
-    def get_range(self):
-        ranges = [(self.start_downloading_time[x[0]], x) for x in self._get_undownload_ranges()]
-        ranges.sort()
+    def get_chunk(self):
+        chunks = [(self.start_downloading_time[x[0]], x) for x in self._get_undownload_chunks()]
+        chunks.sort()
         now_ = time.time()
-        for range_ in ranges:
-            if range_[0] + self.MaxBlockDownloadTime < now_:
-                return range_[1]
-        for range_ in ranges:
-            size = range_[1][1] - range_[1][0]
+        for chunk_ in chunks:
+            if chunk_[0] + self.MaxBlockDownloadTime < now_:
+                return chunk_[1]
+        for chunk_ in chunks:
+            size = chunk_[1][1] - chunk_[1][0]
             if size >= self.MinBlockSplitLength:
-                start = (range_[1][1] - range_[1][0]) // 2 + range_[1][0]
-                return start, range_[1][1],
+                start = (chunk_[1][1] - chunk_[1][0]) // 2 + chunk_[1][0]
+                return start, chunk_[1][1],
 
     def get_range_and_mark_downloading_time(self):
-        rv = self.get_range()
+        rv = self.get_chunk()
         if rv:
             self.start_downloading_time[rv[0]] = time.time()
-            return Range(rv[0] * self.ChunkSize, rv[1] * self.ChunkSize)
+            start = rv[0] * self.ChunkSize
+            end = min(rv[1] * self.ChunkSize, self.filesize)
+            return Range(start, end)
         else:
             return rv
 

@@ -26,14 +26,15 @@ class Chunk:
                 remain = data[self.chunk_max_size - self.chunk_size:]
                 self.chunk.append(data[:self.chunk_max_size - self.chunk_size])
                 rv = self.chunk
+                chunk_size = self.chunk_size
                 self.chunk = [remain]
                 self.chunk_size = len(remain)
-                yield self.start, rv,
+                yield self.start, chunk_size, rv,
                 self.start += self.chunk_max_size
             else:
                 self.chunk_size += len(data)
                 self.chunk.append(data)
-        yield self.start, self.chunk
+        yield self.start, self.chunk_size, self.chunk
 
 
 class HttpChunkClient:
@@ -72,12 +73,15 @@ class HttpChunkClient:
             self.r = self.get_resp_with_redirect_headers()
             t = gevent.timeout.Timeout.start_new(self.chunk_timeout)
             downloaded_size = 0
-            for chunk_ in chunk.consume(self.r.iter_content(4096)):
-                downloaded_size += self.chunk_size
+            for start, size, data in chunk.consume(self.r.iter_content(4096)):
+                chunk_ = start, data
+                downloaded_size += size
                 assert downloaded_size <= self.range_end - self.range_start
+                assert downloaded_size % self.chunk_size == 0 or downloaded_size == self.range_end - self.range_start, \
+                    downloaded_size
                 t.cancel()
                 yield chunk_
-                if downloaded_size == self.range_start - self.range_end:
+                if downloaded_size == self.range_end - self.range_start:
                     self.r = None
                     yield True,
                     return
