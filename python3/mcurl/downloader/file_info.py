@@ -153,8 +153,8 @@ class FileInfo(Base):
         if self.is_finished():
             logger.debug('set finished True')
             self.finished = True
-        logger.debug('dbsession: %s %s', DBSession().dirty, DBSession().new)
         DBSession().merge(self)
+        logger.debug('dbsession: %s %s', DBSession().dirty, DBSession().new)
         DBSession().commit()
 
     def _get_undownload_chunks(self):

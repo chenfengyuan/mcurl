@@ -74,18 +74,19 @@ class HttpChunkClient:
             t = gevent.timeout.Timeout.start_new(self.chunk_timeout)
             downloaded_size = 0
             for start, size, data in chunk.consume(self.r.iter_content(4096)):
+                t.cancel()
                 chunk_ = start, data
                 downloaded_size += size
                 assert downloaded_size <= self.range_end - self.range_start
                 assert downloaded_size % self.chunk_size == 0 or downloaded_size == self.range_end - self.range_start, \
                     downloaded_size
-                t.cancel()
                 yield chunk_
                 if downloaded_size == self.range_end - self.range_start:
                     self.r = None
                     yield True,
                     return
                 t = gevent.timeout.Timeout.start_new(self.chunk_timeout)
+            t.cancel()
         except gevent.timeout.Timeout as e:
             if e is t:
                 logger.info('timeout')
