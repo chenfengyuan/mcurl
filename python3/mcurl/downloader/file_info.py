@@ -150,6 +150,8 @@ class FileInfo(Base):
         self.fp.flush()
         block_i = chunk.start // self.ChunkSize
         self.chunks[block_i] = True
+        if block_i + 1 < len(self.start_downloading_time):
+            self.start_downloading_time[block_i + 1] = time.time()
         if self.is_finished():
             logger.debug('set finished True')
             self.finished = True
@@ -171,9 +173,10 @@ class FileInfo(Base):
             start = end
         return rv
 
-    def get_chunk(self):
+    def get_chunks(self):
         chunks = [(self.start_downloading_time[x[0]], x) for x in self._get_undownload_chunks()]
         chunks.sort()
+        logger.debug('%s: raw undownloaded chunks %s', self.filename, chunks)
         now_ = time.time()
         for chunk_ in chunks:
             if chunk_[0] + self.MaxBlockDownloadTime < now_:
@@ -185,7 +188,8 @@ class FileInfo(Base):
                 return start, chunk_[1][1],
 
     def get_range_and_mark_downloading_time(self):
-        rv = self.get_chunk()
+        rv = self.get_chunks()
+        logger.debug('%s: smart chunks %s', self.filename, rv)
         if rv:
             self.start_downloading_time[rv[0]] = time.time()
             start = rv[0] * self.ChunkSize
