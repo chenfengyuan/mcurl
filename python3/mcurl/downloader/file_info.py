@@ -67,6 +67,7 @@ class FileInfo(Base):
         self.fp = None
         """:type: FileIO"""
         self.start_downloading_time = None
+        """:type: list[int]"""
 
     def init(self):
         self.start_downloading_time = [0] * len(self.chunks)
