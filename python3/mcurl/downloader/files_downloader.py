@@ -39,6 +39,7 @@ class FilesDownloader:
         file_infos = list(map(FileInfo.get, filenames))
         """:type: List[FileInfo]"""
         DBSession().expunge_all()
+        gevent.spawn(self.start_server, file_infos)
         inq = Queue()
         filename_outq_map = {}
         """:type: Dict[str, Queue]"""
@@ -74,3 +75,38 @@ class FilesDownloader:
             assert data[0] == Classification.FILE_FINISHED
             downloading_files -= 1
         self.exit_event.set()
+
+    @staticmethod
+    def start_server(infos):
+        """
+        :type infos: list[FileInfo]
+        """
+        import zmq.green as zmq
+        import json
+        import gevent
+
+        def server():
+            context = zmq.Context()
+            socket = context.socket(zmq.REP)
+            port = socket.bind_to_random_port('tcp://127.0.0.1')
+
+            def log_print():
+                import time
+                while True:
+                    logger.info('')
+                    logger.info('')
+                    logger.info('--------------------listen on %s-------------------------------', port)
+                    logger.info('')
+                    logger.info('')
+                    time.sleep(60)
+            gevent.spawn(log_print)
+
+            while True:
+                _ = socket.recv()
+                data = []
+                for info in infos:
+                    data.append(dict(filename=info.filename, filesize=info.filesize,
+                                     percentage=sum(info.chunks)/len(info.chunks)))
+                data = json.dumps(data)
+                socket.send(data.encode('utf-8'))
+        return gevent.spawn(server)
