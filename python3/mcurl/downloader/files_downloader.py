@@ -88,7 +88,7 @@ class FilesDownloader:
         def server():
             context = zmq.Context()
             socket = context.socket(zmq.REP)
-            port = socket.bind_to_random_port('tcp://127.0.0.1')
+            port = socket.bind_to_random_port('tcp://127.0.0.1', min_port=51130, max_port=51140)
 
             def log_print():
                 import time
