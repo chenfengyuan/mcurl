@@ -82,6 +82,7 @@ class FilesDownloader:
         :type infos: list[FileInfo]
         """
         import zmq.green as zmq
+        import zmq.error as zmq_error
         import json
         import gevent
 
@@ -95,7 +96,7 @@ class FilesDownloader:
                 try:
                     port = socket.bind_to_random_port('tcp://127.0.0.1', min_port=i,
                                                       max_port=i + 1, max_tries=1)
-                except zmq.error.ZMQBindError:
+                except zmq_error.ZMQBindError:
                     if i == end_port - 1:
                         raise
                     else:
